@@ -10,6 +10,7 @@ import { Controller,
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { AuthGuard } from '../auth/auth.guard';
+import { Post as PostModel, ApiResponse } from '@forum/shared-types';
 
 // @Controller('posts') -> 定义路由前缀 /posts
 @Controller('posts')
@@ -19,8 +20,13 @@ export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
   // GET /posts
+  // @Get()
+  // async findAll() {
+  //   return this.postsService.findAll();
+  // }
+
   @Get()
-  async findAll() {
+  async findAll(): Promise<PostModel[]> { // 使用共享接口约束返回值
     return this.postsService.findAll();
   }
 

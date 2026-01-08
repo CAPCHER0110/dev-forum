@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@forum/shared-types": "workspace:*",
     "js-cookie": "^3.0.5",
     "next": "16.1.1",
     "react": "19.2.3",

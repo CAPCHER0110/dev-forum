@@ -1,6 +1,7 @@
 import { PostCard } from "../components/PostCard";
 import Link from "next/link"; // Next.js 专用的跳转组件
 import { getBaseUrl } from "@/utils/env";
+import { Post, ApiResponse } from '@forum/shared-types';
 
 // 1. 定义数据获取函数 (直接写 async)
 // 这段代码只在服务端运行，浏览器看不见
@@ -13,7 +14,8 @@ async function getPosts() {
     throw new Error("Failed to fetch posts");
   }
 
-  const result = await res.json(); // result 现在的结构是 { code: 0, message: "OK", data: [...] }
+  const result: ApiResponse<Post[]> = await res.json();
+  // const result = await res.json(); // result 现在的结构是 { code: 0, message: "OK", data: [...] }
   if (result.code !== 0) {
     throw new Error(result.message);
   }

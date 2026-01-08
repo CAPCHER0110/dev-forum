@@ -8,6 +8,12 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: forum_prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d forum_prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
     networks:
@@ -17,6 +23,12 @@ services:
     image: redis:7-alpine
     restart: always
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     volumes:
       - redis_prod_data:/data
     networks:
@@ -37,8 +49,15 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       PORT: "4000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy # 必须等到数据库健康才启动
+      redis:
+        condition: service_healthy # 必须等到 Redis 健康才启动
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
     networks:
       local-prod-net:
         # 🔥 关键 2: 网络别名。在 Docker 网络里，它就叫 "api"
@@ -48,8 +67,8 @@ services:
   # 🦁 方案 B: NestJS 后端
   api-nest:
     build: 
-      context: ./apps/api  # 假设这是你 NestJS 代码的位置
-      dockerfile: Dockerfile
+      context: .  # 假设这是你 NestJS 代码的位置
+      dockerfile: apps/api/Dockerfile
     # 🔥 关键 1: Profile 标签，只有加参数 --profile nest 才启动
     profiles: ["nest"]
     restart: always
@@ -60,8 +79,15 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       PORT: "4000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy # 必须等到数据库健康才启动
+      redis:
+        condition: service_healthy # 必须等到 Redis 健康才启动
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 10
     networks:
       local-prod-net:
         # 🔥 关键 2: 网络别名。它也叫 "api"，骗过 Nginx
@@ -70,8 +96,8 @@ services:
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     restart: always

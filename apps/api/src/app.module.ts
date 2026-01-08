@@ -22,6 +22,21 @@ import { v4 as uuidv4 } from 'uuid';
     RedisModule.forRoot({
       type: 'single',
       url: process.env.REDIS_URL || 'redis://redis:6379',
+      options: {
+        // 🔥 关键配置：无限重试策略
+        retryStrategy: (times) => {
+          const delay = Math.min(times * 50, 2000);
+          return delay; 
+        },
+        // 防止 DNS 解析失败导致的立即崩溃
+        reconnectOnError: (err) => {
+          const targetError = 'READONLY';
+          if (err.message.includes(targetError)) {
+            return true;
+          }
+          return false;
+        },
+      },
     }),
     CacheConfigModule,
     LoggerModule.forRoot({
