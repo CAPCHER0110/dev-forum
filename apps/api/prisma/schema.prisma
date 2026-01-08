@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 定义 User 模型
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String   // 存放加密后的哈希值，千万别存明文！
+  name      String?
+  createdAt DateTime @default(now())
+  posts     Post[]   // 关联关系：一个用户拥有多个帖子
+}
+
+// 定义 Post 模型
+model Post {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String?  // ? 表示可选，对应数据库的 nullable
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt // Prisma 自动维护更新时间
+
+  // 外键关系
+  authorId  Int?
+  author    User?    @relation(fields: [authorId], references: [id])
+}

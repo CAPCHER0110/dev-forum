@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # 1. 数据库
+  postgres:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: dev_forum
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    networks:
+      - forum-network
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - forum-network
+
+  # 2. 后端 API
+  api:
+    build: 
+      context: ./apps/api # 指定构建目录
+    restart: always
+    ports:
+      - '4000:4000'
+    environment:
+      # 🔥 这里的 host 必须写 'postgres' (服务名)，不能写 localhost
+      DATABASE_URL: "postgresql://myuser:mypassword@postgres:5432/dev_forum?schema=public"
+      REDIS_ADDR: "redis:6379"
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - forum-network
+
+  # 3. 前端 Web
+  web:
+    build: 
+      context: ./apps/web
+    restart: always
+    ports:
+      - '3000:3000'
+    environment:
+      # 🔥 坑来了！
+      # Server Side Fetch (RSC) 必须访问 Docker 内部的 api 服务名
+      # Client Side Fetch (浏览器) 必须访问宿主机的 localhost:4000
+      # 我们这里先做最简单的配置：让服务端请求走内部网络
+      NEXT_PUBLIC_API_URL: "http://localhost:4000" # 给浏览器用的
+      INTERNAL_API_URL: "http://api:4000"         # 给 Next.js 服务器用的
+    depends_on:
+      - api
+    networks:
+      - forum-network
+
+volumes:
+  postgres_data:
+
+networks:
+  forum-network:

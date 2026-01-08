@@ -1,0 +1,102 @@
+version: '3.9' # Profile 需要 3.9+ 版本
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: forum_prod
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - local-prod-net
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - local-prod-net
+
+  # 🐹 方案 A: Go 后端
+  api-go:
+    build: 
+      context: ./apps/go-api
+      dockerfile: Dockerfile
+    # 🔥 关键 1: Profile 标签，只有加参数 --profile go 才启动
+    profiles: ["go"] 
+    restart: always
+    environment:
+      # Go 使用自定义 DSN 格式
+      DATABASE_DSN: "host=postgres user=${DB_USER} password=${DB_PASSWORD} dbname=forum_prod port=5432 sslmode=disable TimeZone=Asia/Shanghai"
+      REDIS_ADDR: "redis:6379"
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "4000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      local-prod-net:
+        # 🔥 关键 2: 网络别名。在 Docker 网络里，它就叫 "api"
+        aliases:
+          - api
+
+  # 🦁 方案 B: NestJS 后端
+  api-nest:
+    build: 
+      context: ./apps/api  # 假设这是你 NestJS 代码的位置
+      dockerfile: Dockerfile
+    # 🔥 关键 1: Profile 标签，只有加参数 --profile nest 才启动
+    profiles: ["nest"]
+    restart: always
+    environment:
+      # NestJS (Prisma) 使用标准的 Connection URL 格式
+      DATABASE_URL: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/forum_prod?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "4000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      local-prod-net:
+        # 🔥 关键 2: 网络别名。它也叫 "api"，骗过 Nginx
+        aliases:
+          - api
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    # 注意：这里去掉了 depends_on: - api，因为 api 只是别名，不是服务名
+    # 如果写 depends_on: - api-go 会导致无法单独启动 nest profile
+    networks:
+      - local-prod-net
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.local.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+      # 同理，去掉了对 api 的显式依赖，让 Nginx 自动重试 upstream
+    networks:
+      - local-prod-net
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+
+networks:
+  local-prod-net:
