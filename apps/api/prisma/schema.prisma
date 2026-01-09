@@ -22,6 +22,13 @@ model User {
   name      String?
   createdAt DateTime @default(now())
   posts     Post[]   // 关联关系：一个用户拥有多个帖子
+
+  // 支付相关字段
+  stripeCustomerId       String?   @unique // Stripe 客户 ID
+  stripeSubscriptionId   String?   @unique // 订阅 ID
+  stripePriceId          String?             // 当前订阅的价格 ID
+  stripeCurrentPeriodEnd DateTime?           // 订阅到期时间
+  isPro                  Boolean   @default(false) // 简单的状态标识
 }
 
 // 定义 Post 模型

@@ -8,6 +8,8 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: forum_prod
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d forum_prod"]
       interval: 5s
@@ -34,12 +36,87 @@ services:
     networks:
       - local-prod-net
 
-  # 🐹 方案 A: Go 后端
+  # 对象存储 (MinIO) - S3 兼容
+  minio:
+    image: minio/minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9010:9000" # API 端口
+      - "9001:9001" # 控制台端口
+    volumes:
+      - minio_data:/data
+    networks:
+      - local-prod-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # 消息队列 (RabbitMQ)
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"   # 消息通讯端口
+      - "15672:15672" # 管理后台端口
+    networks:
+      - local-prod-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # 监控收集 (Prometheus)
+  prometheus:
+    image: prom/prometheus
+    restart: always
+    volumes:
+      # 需要在根目录新建 prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    networks:
+      - local-prod-net
+
+  # 监控展示 (Grafana)
+  grafana:
+    image: grafana/grafana
+    restart: always
+    ports:
+      - "3001:3000" # 宿主机 3001
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    networks:
+      - local-prod-net
+
+  mailhog:
+    image: mailhog/mailhog
+    restart: always
+    ports:
+      - "1025:1025" # SMTP 端口 (代码连这个发邮件)
+      - "9025:8025" # Web 界面端口 (浏览器看邮件)
+    networks:
+      - local-prod-net
+
+  # 方案 A: Go 后端
   api-go:
     build: 
       context: ./apps/go-api
       dockerfile: Dockerfile
-    # 🔥 关键 1: Profile 标签，只有加参数 --profile go 才启动
+    # Profile 标签，只有加参数 --profile go 才启动
     profiles: ["go"] 
     restart: always
     environment:
@@ -48,11 +125,32 @@ services:
       REDIS_ADDR: "redis:6379"
       JWT_SECRET: ${JWT_SECRET}
       PORT: "4000"
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ENDPOINT: http://minio:9000
+      S3_BUCKET: forum-uploads
+      S3_FORCE_PATH_STYLE: "true" # MinIO 需要这个
+      # 支付配置
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_PRICE_ID_PRO: ${STRIPE_PRICE_ID_PRO}
+      FRONTEND_URL: ${FRONTEND_URL}
+      # 邮件配置
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
+      MAIL_USER: test
+      MAIL_PASS: test
+      MAIL_FROM: "no-reply@forum.local"
+    ports:
+      - "4000:4000"
     depends_on:
       postgres:
         condition: service_healthy # 必须等到数据库健康才启动
       redis:
         condition: service_healthy # 必须等到 Redis 健康才启动
+      rabbitmq: 
+        condition: service_healthy # 等待 RabbitMQ 健康
     deploy:
       restart_policy:
         condition: on-failure
@@ -60,16 +158,16 @@ services:
         max_attempts: 10
     networks:
       local-prod-net:
-        # 🔥 关键 2: 网络别名。在 Docker 网络里，它就叫 "api"
+        # 网络别名。在 Docker 网络里，它就叫 "api"
         aliases:
           - api
 
-  # 🦁 方案 B: NestJS 后端
+  # 方案 B: NestJS 后端
   api-nest:
     build: 
       context: .  # 假设这是你 NestJS 代码的位置
       dockerfile: apps/api/Dockerfile
-    # 🔥 关键 1: Profile 标签，只有加参数 --profile nest 才启动
+    # Profile 标签，只有加参数 --profile nest 才启动
     profiles: ["nest"]
     restart: always
     environment:
@@ -78,11 +176,32 @@ services:
       REDIS_URL: "redis://redis:6379"
       JWT_SECRET: ${JWT_SECRET}
       PORT: "4000"
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ENDPOINT: http://minio:9000
+      S3_BUCKET: forum-uploads
+      S3_FORCE_PATH_STYLE: "true" # MinIO 需要这个
+      # 支付配置
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_PRICE_ID_PRO: ${STRIPE_PRICE_ID_PRO}
+      FRONTEND_URL: ${FRONTEND_URL}
+      # 邮件配置
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
+      MAIL_USER: test
+      MAIL_PASS: test
+      MAIL_FROM: "no-reply@forum.local"
+    ports:
+      - "4000:4000"
     depends_on:
       postgres:
         condition: service_healthy # 必须等到数据库健康才启动
       redis:
         condition: service_healthy # 必须等到 Redis 健康才启动
+      rabbitmq: 
+        condition: service_healthy # 等待 RabbitMQ 健康
     deploy:
       restart_policy:
         condition: on-failure
@@ -90,7 +209,7 @@ services:
         max_attempts: 10
     networks:
       local-prod-net:
-        # 🔥 关键 2: 网络别名。它也叫 "api"，骗过 Nginx
+        # 网络别名。它也叫 "api"，骗过 Nginx
         aliases:
           - api
 
@@ -123,6 +242,7 @@ services:
 volumes:
   postgres_prod_data:
   redis_prod_data:
+  minio_data:
 
 networks:
   local-prod-net:

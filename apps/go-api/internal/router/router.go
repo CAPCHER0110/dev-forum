@@ -12,6 +12,8 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func SetupRouter(ctx *svc.ServiceContext) *gin.Engine {
@@ -32,9 +34,14 @@ func SetupRouter(ctx *svc.ServiceContext) *gin.Engine {
 	config.AllowHeaders = []string{"Origin", "Content-Type", "Authorization"}
 	r.Use(cors.New(config))
 
+	// 暴露 Prometheus 监控指标接口
+	// Prometheus 会定时来这里“扒”数据
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
 	// 2. 初始化处理器
 	postHandler := handlers.NewPostHandler(ctx)
 	authHandler := handlers.NewAuthHandler(ctx)
+	paymentHandler := handlers.NewPaymentHandler(ctx)
 
 	// 认证路由
 	auth := r.Group("/auth")
@@ -49,6 +56,19 @@ func SetupRouter(ctx *svc.ServiceContext) *gin.Engine {
 	r.GET("/posts/:id", postHandler.GetPostDetail)
 	// r.POST("/posts", postHandler.CreatePost)
 	r.POST("/posts", middleware.JWTAuth(ctx.Config.JWTSecret), postHandler.CreatePost)
+
+	r.POST("/upload", middleware.JWTAuth(ctx.Config.JWTSecret), handlers.Upload)
+
+	// 支付模块
+	payment := r.Group("/payment")
+	{
+		// Webhook 必须是公开的 (不需要 Auth Middleware)
+		// Stripe 服务器会直接访问这个接口
+		payment.POST("/webhook", paymentHandler.HandleWebhook)
+
+		// 创建支付链接需要登录
+		payment.POST("/checkout", middleware.JWTAuth(ctx.Config.JWTSecret), paymentHandler.CreateCheckoutSession)
+	}
 
 	return r
 }

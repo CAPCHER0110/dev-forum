@@ -6,8 +6,10 @@ import (
 	"go-api/internal/config" // 引入配置包
 	"go-api/internal/database"
 	"go-api/internal/logger"
+	"go-api/internal/pkg/mq"
 	"go-api/internal/router"
 	"go-api/internal/svc"
+	"go-api/internal/worker"
 )
 
 func main() {
@@ -28,6 +30,22 @@ func main() {
 
 	// 组装 ServiceContext (装箱)
 	serviceCtx := svc.NewServiceContext(cfg, db, rdb)
+
+	// 1. 初始化 RabbitMQ 连接
+	// 注意：生产环境建议把连接配置放在 global 或者 wire 注入中，这里为了演示简单写
+	// rabbitUrl := fmt.Sprintf("amqp://%s:%s@rabbitmq:5672/", "user", "password")
+	slog.Info("main:config", "cfg.RabbitMQ.URL", cfg.RabbitMQ.URL, "cfg.RabbitMQ.QueueName", cfg.RabbitMQ.QueueName)
+	mqClient, err := mq.NewRabbitMQ(cfg.RabbitMQ.URL, cfg.RabbitMQ.QueueName)
+	if err != nil {
+		// 如果连不上 MQ，可以选择 panic，或者降级运行
+		slog.Info("⚠️ Warning: RabbitMQ connect failed", "err", err)
+	} else {
+		defer mqClient.Close()
+
+		// 启动消费者 (它会在后台默默工作)
+		// 把 worker.HandleNewPost 函数传进去
+		mqClient.StartConsumer(worker.HandleNewPost)
+	}
 
 	// 3. 设置并启动路由
 	r := router.SetupRouter(serviceCtx)

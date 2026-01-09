@@ -12,6 +12,11 @@ import { APP_FILTER } from '@nestjs/core';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggerModule } from 'nestjs-pino';
 import { v4 as uuidv4 } from 'uuid';
+import { UploadModule } from './upload/upload.module';
+import { NotificationModule } from './notification/notification.module';
+import { NotificationController } from './notification/notification.controller';
+import { PaymentModule } from './payment/payment.module'
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -23,7 +28,7 @@ import { v4 as uuidv4 } from 'uuid';
       type: 'single',
       url: process.env.REDIS_URL || 'redis://redis:6379',
       options: {
-        // 🔥 关键配置：无限重试策略
+        // 无限重试策略
         retryStrategy: (times) => {
           const delay = Math.min(times * 50, 2000);
           return delay; 
@@ -79,6 +84,11 @@ import { v4 as uuidv4 } from 'uuid';
         autoLogging: true,
       },
     }),
+    UploadModule,
+    NotificationModule,
+    // 注册 PaymentModule
+    PaymentModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [

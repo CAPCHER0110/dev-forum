@@ -9,6 +9,7 @@ const (
 	CodeArticleNotExist = 40403
 	CodeTitleNotExist   = 40404
 	CodeInternalError   = 50001
+	CodeStripeError     = 60001
 )
 
 var codeMsg = map[int]string{
@@ -20,6 +21,7 @@ var codeMsg = map[int]string{
 	CodeArticleNotExist: "文章不存在",
 	CodeTitleNotExist:   "标题是必填项",
 	CodeInternalError:   "服务器内部故障",
+	CodeStripeError:     "Stripe Error",
 }
 
 func GetMsg(code int) string {

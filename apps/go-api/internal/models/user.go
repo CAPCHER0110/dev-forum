@@ -12,6 +12,13 @@ type User struct {
 	// Prisma 是驼峰 createdAt，必须映射
 	CreatedAt time.Time `gorm:"column:createdAt" json:"createdAt"`
 	UpdatedAt time.Time `gorm:"column:updatedAt" json:"updatedAt"`
+
+	// Stripe 相关字段
+	StripeCustomerID       *string    `gorm:"uniqueIndex" json:"stripeCustomerId"`
+	StripeSubscriptionID   *string    `gorm:"uniqueIndex" json:"stripeSubscriptionId"`
+	StripePriceID          *string    `json:"stripePriceId"`
+	StripeCurrentPeriodEnd *time.Time `json:"stripeCurrentPeriodEnd"`
+	IsPro                  bool       `gorm:"default:false" json:"isPro"`
 }
 
 // 强制指定表名为 "User" (区分大小写)

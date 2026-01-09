@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service'
 import { CreatePostDto } from './dto/create-post.dto';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { CacheKeyService } from '../common/cache/cache-key.service'; 
+import { ClientProxy } from '@nestjs/microservices';
 
 // 定义一个简单的接口 (Go struct)
 export interface Post {
@@ -20,10 +21,11 @@ export class PostsService {
     private prisma: PrismaService,
     @InjectRedis() private readonly redis: Redis, // 注入 Redis 实例
     private readonly cacheKeyService: CacheKeyService,
+    @Inject('NOTIFICATION_SERVICE') private readonly mqClient: ClientProxy,
   ) {}
 
   async create(createPostDto: CreatePostDto) {
-    const post = this.prisma.post.create({
+    const post = await this.prisma.post.create({
         data: {
             title: createPostDto.title,
             content: createPostDto.content,
@@ -34,6 +36,15 @@ export class PostsService {
     const cacheKey = this.cacheKeyService.postsListKey;
     // 清理缓存
     await this.redis.del(cacheKey);
+
+    // 异步发送消息 (Fire and Forget)
+    // 'post_created' 是模式 (Pattern)，消费者要匹配这个名字
+    this.mqClient.emit('post_created', {
+      postId: post.id,
+      title: post.title,
+      authorId: post.authorId,
+      timestamp: new Date(),
+    });
 
     return post;
   }

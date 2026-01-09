@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"time"
 
+	"go-api/internal/config"
 	"go-api/internal/consts"
 	"go-api/internal/logger"
 	"go-api/internal/models"
 	"go-api/internal/pkg/apperr"
+	"go-api/internal/pkg/mq"
 	"go-api/internal/pkg/response"
 	"go-api/internal/svc"
 
@@ -121,6 +123,19 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 	cacheKey := consts.CacheKeyPostList
 	h.svc.Redis.Del(c.Request.Context(), cacheKey)
 	logger.Info(c, "cache_evicted", "key", cacheKey)
+
+	cfg := config.Load() // 或者从 svc 中获取，如果在 svc 中存了的话
+	logger.Info(c, "config", "cfg.RabbitMQ.URL", cfg.RabbitMQ.URL, "cfg.RabbitMQ.QueueName", cfg.RabbitMQ.QueueName)
+
+	// 异步发送消息
+	// 注意：实际生产中建议单例注入 mq 实例，不要每次 New
+	go func() {
+		mqClient, err := mq.NewRabbitMQ(cfg.RabbitMQ.URL, cfg.RabbitMQ.QueueName)
+		if err == nil {
+			defer mqClient.Close()
+			mqClient.PublishNewPost(newPost.ID, newPost.Title)
+		}
+	}()
 
 	// 4. 返回成功，结果与 NestJS 保持一致
 	// c.JSON(http.StatusCreated, newPost)

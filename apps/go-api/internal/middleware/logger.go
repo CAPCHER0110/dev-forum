@@ -10,6 +10,12 @@ import (
 
 func StructuredLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 如果是监控请求，直接跳过日志记录
+		if c.Request.URL.Path == "/metrics" {
+			c.Next()
+			return
+		}
+
 		start := time.Now()
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
